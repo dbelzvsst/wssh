@@ -53,7 +53,7 @@ func RunPushInstall(payloadAlias, hostAlias string, cfg *Config) error {
 		return fmt.Errorf("SCP failed: %v", err)
 	}
 
-	// 5. Execute SSH to untar (Notice we REMOVED the 'rm' command here!)
+	// 5. Execute SSH to untar (Notice we don't delete the file after extraction) 
 	fmt.Printf("⚙️  Extracting %s on %s (archive will remain on host)...\n", remoteFileName, hostAlias)
 	remoteCmd := fmt.Sprintf("tar -xzf %s -C ~/", remoteFileName)
 	

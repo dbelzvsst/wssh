@@ -122,8 +122,6 @@ func (m model) View() string {
 	return docStyle.Render(m.list.View())
 }
 
-// --- NEW BOOLEAN FILTER LOGIC ---
-
 // customFilter overrides the default fuzzy finder
 func customFilter(term string, targets []string) []list.Rank {
 	var ranks []list.Rank
@@ -208,8 +206,6 @@ func matchAndGroup(tokens []string, target string) bool {
 	}
 	return true // All AND/NOT conditions were satisfied!
 }
-
-// --- END BOOLEAN LOGIC ---
 
 func RunTUI(searchableHosts []SearchableHost) *SearchableHost {
 	items := make([]list.Item, len(searchableHosts))

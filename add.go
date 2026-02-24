@@ -23,7 +23,7 @@ func RunAddInteractive(cfg *Config) error {
 
 	fmt.Println("--- Add New Host ---")
 
-	alias := ask("Alias (e.g., spdev-web-02): ")
+	alias := ask("Alias (e.g., dev-web-02): ")
 	if alias == "" {
 		return fmt.Errorf("alias cannot be empty")
 	}

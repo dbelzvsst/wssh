@@ -26,7 +26,7 @@ func LogConnection(alias string) error {
 	}
 	defer f.Close()
 
-	// Format: 2026-02-23T14:30:00-08:00,spprod-vwa-bsa-01
+	// Format: 2026-02-23T14:30:00-08:00,prod-east-01
 	timestamp := time.Now().Format(time.RFC3339)
 	entry := fmt.Sprintf("%s,%s\n", timestamp, alias)
 
