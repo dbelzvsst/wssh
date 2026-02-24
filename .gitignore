@@ -1,0 +1,8 @@
+# wssh specific ignores
+wssh_logs/
+.wssh_history
+temp/
+
+# Go binaries
+wssh
+
