@@ -44,6 +44,7 @@ type Settings struct {
 	AuthCheckEnv         string              `yaml:"auth_check_env"`
 	IgnoreKeyChanges     *bool               `yaml:"ignore_key_changes"`	
 	SSHAgentEnvs         map[string]AgentEnv `yaml:"ssh_agent_envs"`
+	CaptureCommand       string              `yaml:"capture_command"`
 }
 
 type Config struct {

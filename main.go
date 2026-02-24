@@ -277,16 +277,24 @@ func main() {
 		},
 	}
 	var runCmd = &cobra.Command{
-		Use:   "run [script.sh] [host-alias]",
-		Short: "Stream and execute a local script on a remote host without leaving a footprint",
-		Args:  cobra.ExactArgs(2),
+		Use:   "run [script.sh] [search-terms...]",
+		Short: "Stream and execute a local script on multiple remote hosts",
+		Args:  cobra.MinimumNArgs(2), // Changed from ExactArgs(2)
 		Run: func(cmd *cobra.Command, args []string) {
 			scriptPath := args[0]
-			hostAlias := args[1]
+			searchTerms := args[1:]
 			
-			err := RunScript(scriptPath, hostAlias, cfg)
-			if err != nil {
-				fmt.Printf("\nError: %v\n", err)
+			matchedHosts := FindHosts(searchTerms, searchableHosts)
+			
+			if ConfirmExecution(matchedHosts, fmt.Sprintf("Run '%s'", scriptPath)) {
+				for _, host := range matchedHosts {
+					// You can run these sequentially, or wrap this in a goroutine/WaitGroup 
+					// for parallel execution across all servers at once!
+					err := RunScript(scriptPath, host.Alias, cfg) 
+					if err != nil {
+						fmt.Printf("❌ Error on %s: %v\n", host.Alias, err)
+					}
+				}
 			}
 		},
 	}
@@ -295,37 +303,9 @@ func main() {
 		Short: "List all hosts or search using multiple terms (AND logic)",
 		Run: func(cmd *cobra.Command, args []string) {
 			// 1. Convert all arguments to lowercase search terms
-			var terms []string
-			for _, arg := range args {
-				terms = append(terms, strings.ToLower(arg))
-			}
-
-			fmt.Println("--- Host Aliases ---")
-			count := 0
-			
-			for _, host := range searchableHosts {
-				aliasLower := strings.ToLower(host.Alias)
-				
-				// 2. Assume it's a match, then try to disprove it (Logical AND)
-				match := true
-				for _, term := range terms {
-					if !strings.Contains(aliasLower, term) {
-						match = false
-						break // Failed the AND check, move to the next host
-					}
-				}
-
-				if match {
-					fmt.Printf("  %-30s [Group: %s]\n", host.Alias, host.GroupName)
-					count++
-				}
-			}
-
-			if count == 0 {
-				fmt.Printf("❌ No hosts found matching: %s\n", strings.Join(args, " "))
-			} else {
-				fmt.Printf("\nTotal matches: %d\n", count)
-			}
+			var searchTerms []string = args // No need to convert here, FindHosts will handle it		
+			matchedHosts := FindHosts(searchTerms, searchableHosts)
+			ListHosts(matchedHosts)
 		},
 	}
 

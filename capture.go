@@ -20,7 +20,7 @@ func getSocketForHost(alias string, cfg *Config) string {
 			continue
 		}
 		
-		// If the alias (e.g., "dev-02") starts with "spdev"
+		// If the alias (e.g., "dev-02") starts with "dev"
 		if strings.HasPrefix(alias, envName) {
 			return envData.Sock
 		}
@@ -36,12 +36,21 @@ func getSocketForHost(alias string, cfg *Config) string {
 }
 
 // ResolveTargetNodes queries the JB to find its true FQDN and the dynamic target nodes
+// Important - This was added because the easiest way to get to the data nodes is through the jumpbox,
+// and the jumpbox knows the FQDN of the data nodes, which can change at any time. 
+// This is a very specific use case, so not really applicable to the general use case. 
+// TODO: find a way to make this optional for the generic cases or when jumpbox access isn't required.
 func ResolveTargetNodes(jbAlias, nodeList string, cfg *Config) ([]string, string, error) {
 	fmt.Printf("🔍 Connecting to %s to resolve true FQDN and node mappings...\n", jbAlias)
 
 	sockPath := getSocketForHost(jbAlias, cfg)
 
-	remoteCmd := "hostname -f; echo 'show vwa-stats platform netctrl status | tab| csv' | vwa"
+	// Pull the command from the config, fallback to a safe default if empty
+    remoteCmd := cfg.Settings.CaptureCommand
+    if remoteCmd == "" {
+        remoteCmd = "hostname -f" 
+    }
+
 	sshArgs := []string{
 		"-o", "StrictHostKeyChecking=no", 
 		"-o", "UserKnownHostsFile=/dev/null",
