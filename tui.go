@@ -25,7 +25,7 @@ func (i hostItem) FilterValue() string { return i.host.SearchIndex }
 
 type model struct {
 	list     list.Model
-	choice   *SearchableHost
+	choices  []SearchableHost
 	quitting bool
 	originalItems []list.Item // Keep track of the default YAML order
 	sortMode      string      // "default" or "recent"	
@@ -46,7 +46,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			if m.sortMode == "default" {
 				m.sortMode = "recent"
-				m.list.Title = "wssh - Recent Hosts (ctrl+r to revert | ctrl+p push .tgz)"
+				m.list.Title = "wssh - Select a Host (ctrl+r recent | ctrl+p push | ctrl+a connect all)"
 				
 				recentAliases := GetRecentHosts()
 				var newItems []list.Item
@@ -95,10 +95,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return nil
 			})
 			return m, cmd
+		case "ctrl+a":
+			// Get all currently visible (filtered) items
+			visibleItems := m.list.VisibleItems()
+			if len(visibleItems) > 0 {
+				for _, item := range visibleItems {
+					if i, ok := item.(hostItem); ok {
+						m.choices = append(m.choices, i.host)
+					}
+				}
+			}
+			return m, tea.Quit
+			
 		case "enter":
 			i, ok := m.list.SelectedItem().(hostItem)
 			if ok {
-				m.choice = &i.host
+				m.choices = []SearchableHost{i.host} // Assign as a slice of 1
 			}
 			return m, tea.Quit
 		}
@@ -113,8 +125,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
-	if m.choice != nil {
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("170")).Render(fmt.Sprintf("Connecting to %s...\n", m.choice.Alias))
+	if len(m.choices) == 1 {
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("170")).Render(fmt.Sprintf("Connecting to %s...\n", m.choices[0].Alias))
+	} else if len(m.choices) > 1 {
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("170")).Render(fmt.Sprintf("Connecting to %d hosts...\n", len(m.choices)))
 	}
 	if m.quitting {
 		return "Goodbye!\n"
@@ -122,92 +136,34 @@ func (m model) View() string {
 	return docStyle.Render(m.list.View())
 }
 
-// customFilter overrides the default fuzzy finder
+// customFilter overrides the default fuzzy finder to match our CLI AND-logic
 func customFilter(term string, targets []string) []list.Rank {
 	var ranks []list.Rank
+	
+	// Split the search bar input into individual terms (e.g. "dev" "web")
+	terms := strings.Fields(strings.ToLower(term))
+
 	for i, target := range targets {
-		if matchBoolean(term, target) {
-			// If it matches our boolean logic, we append it to the results.
-			// (Note: We leave MatchedIndices empty because calculating exact letter
-			// highlighting for complex boolean queries is overly complex).
+		targetLower := strings.ToLower(target)
+		
+		// Assume match, then try to disprove it (Logical AND)
+		match := true
+		for _, t := range terms {
+			if !strings.Contains(targetLower, t) {
+				match = false
+				break // Failed the AND check, move to the next host
+			}
+		}
+
+		if match {
+			// If it passes, append it. (We leave MatchedIndexes empty to keep rendering fast)
 			ranks = append(ranks, list.Rank{Index: i})
 		}
 	}
 	return ranks
 }
 
-// matchBoolean tokenizes the query and evaluates OR groups
-func matchBoolean(query, target string) bool {
-	if strings.TrimSpace(query) == "" {
-		return true // Show all if search is empty
-	}
-
-	target = strings.ToLower(target)
-	tokens := strings.Fields(query) // Split by spaces
-
-	var orGroups [][]string
-	var currentGroup []string
-
-	// Split the tokens into groups separated by "OR"
-	for _, t := range tokens {
-		if strings.ToUpper(t) == "OR" {
-			orGroups = append(orGroups, currentGroup)
-			currentGroup = nil
-		} else {
-			currentGroup = append(currentGroup, t)
-		}
-	}
-	orGroups = append(orGroups, currentGroup)
-
-	// If ANY of the OR groups return true, the whole query is true
-	for _, group := range orGroups {
-		if matchAndGroup(group, target) {
-			return true
-		}
-	}
-	return false
-}
-
-// matchAndGroup evaluates AND and NOT conditions within a single OR group
-func matchAndGroup(tokens []string, target string) bool {
-	if len(tokens) == 0 {
-		return false
-	}
-
-	negateNext := false
-
-	for _, token := range tokens {
-		upper := strings.ToUpper(token)
-
-		// Explicit "AND" is ignored because spaces are implicit ANDs
-		if upper == "AND" {
-			continue
-		}
-
-		// If we see "NOT", flag the next token to be negated
-		if upper == "NOT" {
-			negateNext = true
-			continue
-		}
-
-		// Evaluate the search term
-		matched := strings.Contains(target, strings.ToLower(token))
-
-		if negateNext {
-			if matched {
-				return false // It contained a word it was NOT supposed to
-			}
-			negateNext = false // Reset the flag
-		} else {
-			if !matched {
-				return false // It missed a word it WAS supposed to have
-			}
-		}
-	}
-	return true // All AND/NOT conditions were satisfied!
-}
-
-func RunTUI(searchableHosts []SearchableHost) *SearchableHost {
+func RunTUI(searchableHosts []SearchableHost) []SearchableHost {
 	items := make([]list.Item, len(searchableHosts))
 	for i, h := range searchableHosts {
 		items[i] = hostItem{host: h}
@@ -218,11 +174,10 @@ func RunTUI(searchableHosts []SearchableHost) *SearchableHost {
 		originalItems: items,
 		sortMode:      "default",
 	}
-	m.list.Title = "wssh - Select a Host (ctrl+r recent | ctrl+p push .tgz)"	
+	m.list.Title = "wssh - Select a Host (ctrl+r recent | ctrl+p push | ctrl+a connect all)"	
 
-	// Inject our custom boolean filter into the list model!
-	m.list.Filter = customFilter
-
+	// Inject our custom filter into the list model!
+	m.list.Filter = customFilter	
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	finalModel, err := p.Run()
 	if err != nil {
@@ -230,8 +185,8 @@ func RunTUI(searchableHosts []SearchableHost) *SearchableHost {
 		os.Exit(1)
 	}
 
-	if m, ok := finalModel.(model); ok && m.choice != nil {
-		return m.choice
+	if m, ok := finalModel.(model); ok && len(m.choices) > 0 {
+		return m.choices
 	}
 	return nil
 }

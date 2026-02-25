@@ -63,12 +63,25 @@ func main() {
 
 			// No args? Open the TUI Menu!
 			if len(args) == 0 {
-				selectedHost := RunTUI(searchableHosts)
-				if selectedHost != nil {
-					fmt.Printf("Connecting to %s...\n", selectedHost.Alias)
-					err := LaunchLayout(*selectedHost, "single", cfg)
-					if err != nil {
-						log.Fatalf("Failed to launch session: %v", err)
+				selectedHosts := RunTUI(searchableHosts)
+				if len(selectedHosts) > 0 {
+					// If only one host was selected (Enter), just connect
+					if len(selectedHosts) == 1 {
+						fmt.Printf("Connecting to %s...\n", selectedHosts[0].Alias)
+						err := LaunchLayout(selectedHosts[0], "single", cfg)
+						if err != nil {
+							log.Fatalf("Failed to launch session: %v", err)
+						}
+					} else {
+						// If multiple hosts were selected (ctrl+a), confirm first
+						if ConfirmExecution(selectedHosts, "Connect to") {
+							for _, h := range selectedHosts {
+								err := LaunchLayout(h, "single", cfg)
+								if err != nil {
+									fmt.Printf("❌ Failed to launch session for %s: %v\n", h.Alias, err)
+								}
+							}
+						}
 					}
 				}
 				return
@@ -308,7 +321,31 @@ func main() {
 			ListHosts(matchedHosts)
 		},
 	}
+	var connectCmd = &cobra.Command{
+		Use:   "connect [search-terms...]",
+		Short: "Open SSH connections to multiple servers at once",
+		Args:  cobra.MinimumNArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			// Always check auth before establishing connections
+			if err := CheckKeyExpiration(cfg); err != nil {
+				fmt.Println(err)
+				os.Exit(1)
+			}
 
+			// Find matching hosts using the utils engine
+			matchedHosts := FindHosts(args, searchableHosts)
+
+			// Prompt to prevent iTerm pane flooding
+			if ConfirmExecution(matchedHosts, "Connect to") {
+				for _, host := range matchedHosts {
+					err := LaunchLayout(host, "single", cfg)
+					if err != nil {
+						fmt.Printf("❌ Failed to launch session for %s: %v\n", host.Alias, err)
+					}
+				}
+			}
+		},
+	}
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(runCmd)
 	rootCmd.AddCommand(captureCmd)
@@ -318,6 +355,7 @@ func main() {
 	rootCmd.AddCommand(historyCmd)
 	rootCmd.AddCommand(authCmd)
 	rootCmd.AddCommand(macroCmd)
+	rootCmd.AddCommand(connectCmd)	
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(err)
