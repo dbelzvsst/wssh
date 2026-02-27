@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -140,23 +141,46 @@ func (m model) View() string {
 func customFilter(term string, targets []string) []list.Rank {
 	var ranks []list.Rank
 	
-	// Split the search bar input into individual terms (e.g. "dev" "web")
-	terms := strings.Fields(strings.ToLower(term))
+	// Split the search bar input into individual terms
+	terms := strings.Fields(term)
 
+	// Pre-compile regexes for the current keystroke
+	type parsedTerm struct {
+		literal string
+		re      *regexp.Regexp
+	}
+
+	var parsed []parsedTerm
+	for _, t := range terms {
+		p := parsedTerm{literal: strings.ToLower(t)}
+		if strings.ContainsAny(t, "[]*?^$|") {
+			if re, err := regexp.Compile("(?i)" + t); err == nil {
+				p.re = re
+			}
+		}
+		parsed = append(parsed, p)
+	}
+
+	// Filter the targets
 	for i, target := range targets {
 		targetLower := strings.ToLower(target)
 		
-		// Assume match, then try to disprove it (Logical AND)
 		match := true
-		for _, t := range terms {
-			if !strings.Contains(targetLower, t) {
-				match = false
-				break // Failed the AND check, move to the next host
+		for _, pt := range parsed {
+			if pt.re != nil {
+				if !pt.re.MatchString(targetLower) {
+					match = false
+					break
+				}
+			} else {
+				if !strings.Contains(targetLower, pt.literal) {
+					match = false
+					break
+				}
 			}
 		}
 
 		if match {
-			// If it passes, append it. (We leave MatchedIndexes empty to keep rendering fast)
 			ranks = append(ranks, list.Rank{Index: i})
 		}
 	}

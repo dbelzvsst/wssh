@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 )
 
@@ -11,21 +12,44 @@ import (
 func FindHosts(terms []string, allHosts []SearchableHost) []SearchableHost {
 	var matches []SearchableHost
 
-	// Convert all search terms to lowercase once
-	var lowerTerms []string
-	for _, t := range terms {
-		lowerTerms = append(lowerTerms, strings.ToLower(t))
+	// 1. Pre-process and compile search terms once to save performance
+	type parsedTerm struct {
+		literal string
+		re      *regexp.Regexp
 	}
 
+	var parsed []parsedTerm
+	for _, t := range terms {
+		p := parsedTerm{literal: strings.ToLower(t)}
+		
+		// If the term contains regex-like characters, try to compile it
+		if strings.ContainsAny(t, "[]*?^$|") {
+			// Add (?i) to make the regex case-insensitive
+			if re, err := regexp.Compile("(?i)" + t); err == nil {
+				p.re = re
+			}
+		}
+		parsed = append(parsed, p)
+	}
+
+	// 2. Loop through hosts
 	for _, host := range allHosts {
-		// Using SearchIndex ensures we match against Group, Tags, Alias, and Hostname
 		target := strings.ToLower(host.SearchIndex)
 
 		match := true
-		for _, term := range lowerTerms {
-			if !strings.Contains(target, term) {
-				match = false
-				break // Failed the AND check
+		for _, pt := range parsed {
+			if pt.re != nil {
+				// Use Regex Match
+				if !pt.re.MatchString(target) {
+					match = false
+					break
+				}
+			} else {
+				// Fallback to literal Substring Match
+				if !strings.Contains(target, pt.literal) {
+					match = false
+					break
+				}
 			}
 		}
 

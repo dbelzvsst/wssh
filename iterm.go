@@ -62,77 +62,89 @@ func LaunchLayout(host SearchableHost, layout string, cfg *Config) error {
 
 	// 4. Generate the AppleScript based on the requested layout
 	switch layout {
-	case "2h": // 2 Horizontal
-		script = fmt.Sprintf(`tell application "iTerm2"
-			tell current window
-				set newTab to (create tab with %s command "%s")
-				tell newTab
-					set pane1 to current session
-					set pane2 to (split horizontally with %s command "%s")
-				end tell
-			end tell
-		end tell`, profileStr, getCmdForPane(1), profileStr, getCmdForPane(2))
-
-	case "2v": // 2 Vertical
-		script = fmt.Sprintf(`tell application "iTerm2"
-			tell current window
-				set newTab to (create tab with %s command "%s")
-				tell newTab
-					set pane1 to current session
-					set pane2 to (split vertically with %s command "%s")
-				end tell
-			end tell
-		end tell`, profileStr, getCmdForPane(1), profileStr, getCmdForPane(2))
-
-	case "3h": // 3 Horizontal
-		script = fmt.Sprintf(`tell application "iTerm2"
-			tell current window
-				set newTab to (create tab with %s command "%s")
-				tell newTab
-					set pane1 to current session
-					set pane2 to (split horizontally with %s command "%s")
-					tell pane2
-						set pane3 to (split horizontally with %s command "%s")
+		case "2h": // 2 Horizontal
+			script = fmt.Sprintf(`tell application "iTerm2"
+				tell current window
+					set newTab to (create tab with %s command "%s")
+					tell newTab
+						set pane1 to current session
+						tell pane1
+							set pane2 to (split horizontally with %s command "%s")
+						end tell
 					end tell
 				end tell
-			end tell
-		end tell`, profileStr, getCmdForPane(1), profileStr, getCmdForPane(2), profileStr, getCmdForPane(3))
+			end tell`, profileStr, getCmdForPane(1), profileStr, getCmdForPane(2))
 
-	case "3v": // 3 Vertical
-		script = fmt.Sprintf(`tell application "iTerm2"
-			tell current window
-				set newTab to (create tab with %s command "%s")
-				tell newTab
-					set pane1 to current session
-					set pane2 to (split vertically with %s command "%s")
-					tell pane2
-						set pane3 to (split vertically with %s command "%s")
+		case "2v": // 2 Vertical
+			script = fmt.Sprintf(`tell application "iTerm2"
+				tell current window
+					set newTab to (create tab with %s command "%s")
+					tell newTab
+						set pane1 to current session
+						tell pane1
+							set pane2 to (split vertically with %s command "%s")
+						end tell
 					end tell
 				end tell
-			end tell
-		end tell`, profileStr, getCmdForPane(1), profileStr, getCmdForPane(2), profileStr, getCmdForPane(3))
+			end tell`, profileStr, getCmdForPane(1), profileStr, getCmdForPane(2))
 
-	case "4g": // 2x2 Grid
-		script = fmt.Sprintf(`tell application "iTerm2"
-			tell current window
-				set newTab to (create tab with %s command "%s")
-				tell newTab
-					set pane1 to current session
-					set pane2 to (split horizontally with %s command "%s")
-					set pane3 to (split vertically with %s command "%s")
-					tell pane1
-						set pane4 to (split vertically with %s command "%s")
+		case "3h": // 3 Horizontal
+			script = fmt.Sprintf(`tell application "iTerm2"
+				tell current window
+					set newTab to (create tab with %s command "%s")
+					tell newTab
+						set pane1 to current session
+						tell pane1
+							set pane2 to (split horizontally with %s command "%s")
+						end tell
+						tell pane2
+							set pane3 to (split horizontally with %s command "%s")
+						end tell
 					end tell
 				end tell
-			end tell
-		end tell`, profileStr, getCmdForPane(1), profileStr, getCmdForPane(2), profileStr, getCmdForPane(3), profileStr, getCmdForPane(4))
+			end tell`, profileStr, getCmdForPane(1), profileStr, getCmdForPane(2), profileStr, getCmdForPane(3))
 
-	default: // "single" or unrecognized input
-		script = fmt.Sprintf(`tell application "iTerm2"
-			tell current window
-				create tab with %s command "%s"
-			end tell
-		end tell`, profileStr, getCmdForPane(1))
+		case "3v": // 3 Vertical
+			script = fmt.Sprintf(`tell application "iTerm2"
+				tell current window
+					set newTab to (create tab with %s command "%s")
+					tell newTab
+						set pane1 to current session
+						tell pane1
+							set pane2 to (split vertically with %s command "%s")
+						end tell
+						tell pane2
+							set pane3 to (split vertically with %s command "%s")
+						end tell
+					end tell
+				end tell
+			end tell`, profileStr, getCmdForPane(1), profileStr, getCmdForPane(2), profileStr, getCmdForPane(3))
+
+		case "4g": // 2x2 Grid
+			script = fmt.Sprintf(`tell application "iTerm2"
+				tell current window
+					set newTab to (create tab with %s command "%s")
+					tell newTab
+						set pane1 to current session
+						tell pane1
+							set pane2 to (split vertically with %s command "%s")
+						end tell
+						tell pane1
+							set pane3 to (split horizontally with %s command "%s")
+						end tell
+						tell pane2
+							set pane4 to (split horizontally with %s command "%s")
+						end tell
+					end tell
+				end tell
+			end tell`, profileStr, getCmdForPane(1), profileStr, getCmdForPane(2), profileStr, getCmdForPane(3), profileStr, getCmdForPane(4))
+
+		default: // "single" or unrecognized input
+			script = fmt.Sprintf(`tell application "iTerm2"
+				tell current window
+					create tab with %s command "%s"
+				end tell
+			end tell`, profileStr, getCmdForPane(1))
 	}
 
 	// 5. Log the successful execution to your local history file
