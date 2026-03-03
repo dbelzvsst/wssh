@@ -18,55 +18,59 @@ func expandPath(path string) string {
 	return os.ExpandEnv(path)
 }
 
-// CheckKeyExpiration silently checks the configured key against the configured time limit
-func CheckKeyExpiration(cfg *Config) error {
-	// If the user hasn't configured agents in YAML, just skip the check
-	if len(cfg.Settings.SSHAgentEnvs) == 0 {
-		return nil
+// GetKeyForHost dynamically determines the SSH Key path by matching the host alias
+func GetKeyForHost(alias string, cfg *Config) string {
+	for envName, envData := range cfg.Settings.SSHAgentEnvs {
+		if envName == "default" {
+			continue
+		}
+		if strings.HasPrefix(alias, envName) {
+			return expandPath(envData.Key)
+		}
+	}
+	if defaultEnv, exists := cfg.Settings.SSHAgentEnvs["default"]; exists {
+		return expandPath(defaultEnv.Key)
+	}
+	return ""
+}
+
+// WarnKeyExpiration checks if the key for a specific host is expiring/expired and warns
+func WarnKeyExpiration(alias string, cfg *Config) {
+	keyPath := GetKeyForHost(alias, cfg)
+	if keyPath == "" {
+		return // No key configured for this host, ignore
 	}
 
-	// Figure out which environment's key to check
-	checkEnv := cfg.Settings.AuthCheckEnv
-	if checkEnv == "" {
-		checkEnv = "default" // Generic fallback instead of a company specific one
-	}
-
-	targetEnv, exists := cfg.Settings.SSHAgentEnvs[checkEnv]
-	if !exists {
-		return fmt.Errorf("auth_check_env '%s' not found in settings.ssh_agent_envs. Please update your ~/.wssh.yaml", checkEnv)
-	}
-
-	targetKey := expandPath(targetEnv.Key)
-	fileInfo, err := os.Stat(targetKey)
+	fileInfo, err := os.Stat(keyPath)
 	if err != nil {
-		return fmt.Errorf("could not find key %s. Have you run the 2FA utility?", targetKey)
+		fmt.Printf("⚠️  \033[1;33mWarning: Could not find key file: %s\033[0m\n", keyPath)
+		time.Sleep(2 * time.Second)
+		return
 	}
 
-	// Grab expiration hours, defaulting to 23.5 if they left it blank
 	hours := cfg.Settings.AgentExpirationHours
 	if hours == 0 {
 		hours = 23.5
 	}
-	
-	// Convert the float (23.5) into a time.Duration
-	expirationLimit := time.Duration(hours * float64(time.Hour))
 
-	if time.Since(fileInfo.ModTime()) > expirationLimit {
-		return fmt.Errorf("\033[1;31m[EXPIRED]\033[0m Keys were last updated at %s.\nPlease run your manual 2FA utility, then run 'wssh auth'.", fileInfo.ModTime().Format(time.RFC822))
+	expirationTime := fileInfo.ModTime().Add(time.Duration(hours * float64(time.Hour)))
+	timeRemaining := time.Until(expirationTime)
+
+	if timeRemaining < 0 {
+		// Expired
+		fmt.Printf("⚠️  \033[1;31mWARNING: Your SSH key for %s expired %v ago!\033[0m\n", alias, -timeRemaining.Round(time.Minute))
+		time.Sleep(2 * time.Second) // Pause so the user can read it before iTerm takes focus
+	} else if timeRemaining < 60*time.Minute {
+		// Expiring soon (< 60 mins)
+		fmt.Printf("⚠️  \033[1;33mWARNING: Your SSH key for %s will expire in %v!\033[0m\n", alias, timeRemaining.Round(time.Minute))
+		time.Sleep(2 * time.Second) // Pause so the user can read it
 	}
-
-	return nil
 }
 
 // CheckAndPrimeAgents uses the dynamic YAML configuration to prime sockets
 func CheckAndPrimeAgents(cfg *Config) error {
 	if len(cfg.Settings.SSHAgentEnvs) == 0 {
 		return fmt.Errorf("no ssh_agent_envs found in ~/.wssh.yaml under settings")
-	}
-
-	// 1. Check expiration first
-	if err := CheckKeyExpiration(cfg); err != nil {
-		return err
 	}
 
 	// Print validation message
@@ -76,9 +80,9 @@ func CheckAndPrimeAgents(cfg *Config) error {
 	}
 	targetKey := expandPath(cfg.Settings.SSHAgentEnvs[checkEnv].Key)
 	fileInfo, _ := os.Stat(targetKey)
-	fmt.Printf("\033[1;32m[VALID]\033[0m Keys are fresh (updated %s).\n\n", fileInfo.ModTime().Format(time.Kitchen))
+	fmt.Printf("\033[1;32m[VALID]\033[0m Keys are ready (updated %s).\n\n", fileInfo.ModTime().Format(time.Kitchen))
 
-	// 2. Loop through dynamic config to prime agents
+	// Loop through dynamic config to prime agents
 	for envName, config := range cfg.Settings.SSHAgentEnvs {
 		fmt.Printf("--- Setting up Agent for: %s ---\n", envName)
 

@@ -20,6 +20,7 @@ func ExecuteAppleScript(script string) error {
 
 // LaunchLayout handles layouts, applies profiles, and wraps the command in logging/flags
 func LaunchLayout(host SearchableHost, layout string, cfg *Config) error {
+	WarnKeyExpiration(host.Alias, cfg)
 	sshArgs := ""
 
 	// 1. Ignore Key Changes (Default is true if missing from YAML)
