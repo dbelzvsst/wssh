@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -67,11 +68,12 @@ func RunAddInteractive(cfg *Config) error {
 	if authType == "key" {
 		fmt.Println("\nAvailable SSH Agent Environments:")
 		
-		// Extract map keys into a slice so we can number them predictably
+		// Extract map keys into a slice and sort for deterministic ordering
 		var envNames []string
 		for envName := range cfg.Settings.SSHAgentEnvs {
 			envNames = append(envNames, envName)
 		}
+		sort.Strings(envNames)
 		
 		for i, name := range envNames {
 			fmt.Printf("  %d) %s\n", i+1, name)

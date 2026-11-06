@@ -31,11 +31,78 @@ func main() {
 		log.Fatalf("Error loading config from %s: %v", configPath, err)
 	}
 
+	var retryConnections bool
+	var localMode bool
+	var lastHost bool
+
+	layoutCompletions := []string{
+		"single\tStandard pane",
+		"2h\tTwo horizontal panes",
+		"2v\tTwo vertical panes",
+		"3h\tThree horizontal panes",
+		"3v\tThree vertical panes",
+		"4g\t2x2 Grid",
+	}
+	completeLayout := func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		if len(args) > 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		var completions []string
+		for _, layout := range layoutCompletions {
+			if strings.HasPrefix(layout, toComplete) {
+				completions = append(completions, layout)
+			}
+		}
+		return completions, cobra.ShellCompDirectiveNoFileComp
+	}
+
+	launchHost := func(host SearchableHost, layout string) error {
+		if localMode {
+			if layout != "single" {
+				fmt.Printf("⚠️  --local does not support layout '%s'; using 'single' in the current terminal.\n", layout)
+			}
+			return LaunchLocal(host, cfg, retryConnections)
+		}
+
+		return LaunchLayout(host, layout, cfg, retryConnections)
+	}
+
+	reconnectLastHost := func(args []string) error {
+		layout := "single"
+		if len(args) == 1 {
+			layout = args[0]
+		}
+
+		lastAlias, err := GetLastHost()
+		if err != nil {
+			return fmt.Errorf("failed to read last host: %w", err)
+		}
+
+		targetHost := SearchableHost{Alias: lastAlias}
+		for _, host := range searchableHosts {
+			if host.Alias == lastAlias {
+				targetHost = host
+				break
+			}
+		}
+
+		fmt.Printf("Reconnecting to %s with layout '%s'\n", targetHost.Alias, layout)
+		return launchHost(targetHost, layout)
+	}
+
 	var rootCmd = &cobra.Command{
 		Use:   "wssh [host] [layout]",
 		Short: "wssh is an iTerm2 SSH orchestrator",
-		Args:  cobra.ArbitraryArgs,
+		Args: func(cmd *cobra.Command, args []string) error {
+			if lastHost {
+				return cobra.MaximumNArgs(1)(cmd, args)
+			}
+			return nil
+		},
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			if lastHost {
+				return completeLayout(cmd, args, toComplete)
+			}
 			if len(args) == 0 {
 				var completions []string
 				for _, host := range searchableHosts {
@@ -55,6 +122,12 @@ func main() {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		},
 		Run: func(cmd *cobra.Command, args []string) {
+			if lastHost {
+				if err := reconnectLastHost(args); err != nil {
+					log.Fatalf("Failed to reconnect: %v", err)
+				}
+				return
+			}
 			// No args? Open the TUI Menu!
 			if len(args) == 0 {
 				selectedHosts := RunTUI(searchableHosts)
@@ -62,7 +135,7 @@ func main() {
 					// If only one host was selected (Enter), just connect
 					if len(selectedHosts) == 1 {
 						fmt.Printf("Connecting to %s...\n", selectedHosts[0].Alias)
-						err := LaunchLayout(selectedHosts[0], "single", cfg)
+						err := launchHost(selectedHosts[0], "single")
 						if err != nil {
 							log.Fatalf("Failed to launch session: %v", err)
 						}
@@ -70,7 +143,7 @@ func main() {
 						// If multiple hosts were selected (ctrl+a), confirm first
 						if ConfirmExecution(selectedHosts, "Connect to") {
 							for _, h := range selectedHosts {
-								err := LaunchLayout(h, "single", cfg)
+								err := launchHost(h, "single")
 								if err != nil {
 									fmt.Printf("❌ Failed to launch session for %s: %v\n", h.Alias, err)
 								}
@@ -105,12 +178,16 @@ func main() {
 			}
 
 			fmt.Printf("CLI Mode: Launching %s with layout '%s'\n", targetHost.Alias, layout)
-			err := LaunchLayout(targetHost, layout, cfg)
+			err := launchHost(targetHost, layout)
 			if err != nil {
 				log.Fatalf("Failed to launch layout: %v", err)
 			}
 		},
 	}
+
+	rootCmd.PersistentFlags().BoolVarP(&retryConnections, "retry", "r", false, "Retry SSH connection every 5 seconds until success or Ctrl+C")
+	rootCmd.PersistentFlags().BoolVar(&localMode, "local", false, "Run in the current terminal (no new iTerm tab)")
+	rootCmd.Flags().BoolVar(&lastHost, "last", false, "Reconnect to the most recently connected host (optional layout argument)")
 
 	var macroCmd = &cobra.Command{
 		Use:   "macro [name]",
@@ -162,6 +239,27 @@ func main() {
 		},
 	}
 
+	var initCmd = &cobra.Command{
+		Use:   "init",
+		Short: "Open a pre-split iTerm workspace for local development",
+		Run: func(cmd *cobra.Command, args []string) {
+			err := LaunchInitLayout(cfg)
+			if err != nil {
+				log.Fatalf("Failed to launch init layout: %v", err)
+			}
+		},
+	}
+
+	var lastCmd = &cobra.Command{
+		Use:               "last [layout]",
+		Short:             "Reconnect to the most recently connected host",
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeLayout,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return reconnectLastHost(args)
+		},
+	}
+
 	var historyCmd = &cobra.Command{
 		Use:   "history",
 		Short: "View recently connected hosts",
@@ -184,7 +282,7 @@ func main() {
 		},
 	}
 
-    // The direct CLI command
+	// The direct CLI command
 	var pushCmd = &cobra.Command{
 		Use:   "pushinstall [payload-alias] [host-alias]",
 		Short: "Push a configured .tgz payload to a host and extract it",
@@ -204,7 +302,7 @@ func main() {
 		Args:   cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			hostAlias := args[0]
-			
+
 			if len(cfg.Payloads) == 0 {
 				fmt.Println("❌ No payloads configured in ~/.wssh.yaml.")
 				fmt.Println("Press Enter to return...")
@@ -213,12 +311,12 @@ func main() {
 			}
 
 			fmt.Printf("--- Push Payload to %s ---\n", hostAlias)
-			
+
 			var aliases []string
 			for a := range cfg.Payloads {
 				aliases = append(aliases, a)
 			}
-			
+
 			for i, a := range aliases {
 				fmt.Printf("  %d) %s (%s)\n", i+1, a, cfg.Payloads[a])
 			}
@@ -241,7 +339,7 @@ func main() {
 			if err != nil {
 				fmt.Printf("Error: %v\n", err)
 			}
-			
+
 			fmt.Print("\nPress Enter to return to menu...")
 			scanner.Scan()
 		},
@@ -252,7 +350,7 @@ func main() {
 		Args:  cobra.MinimumNArgs(4), // Needs at least: alias, "node", "x", "cap"
 		Run: func(cmd *cobra.Command, args []string) {
 			jbAlias := args[0]
-			
+
 			// Validate syntax
 			if args[1] != "node" || args[3] != "cap" {
 				fmt.Println("❌ Invalid syntax.")
@@ -290,14 +388,14 @@ func main() {
 		Run: func(cmd *cobra.Command, args []string) {
 			scriptPath := args[0]
 			searchTerms := args[1:]
-			
+
 			matchedHosts := FindHosts(searchTerms, searchableHosts)
-			
+
 			if ConfirmExecution(matchedHosts, fmt.Sprintf("Run '%s'", scriptPath)) {
 				for _, host := range matchedHosts {
-					// You can run these sequentially, or wrap this in a goroutine/WaitGroup 
+					// You can run these sequentially, or wrap this in a goroutine/WaitGroup
 					// for parallel execution across all servers at once!
-					err := RunScript(scriptPath, host.Alias, cfg) 
+					err := RunScript(scriptPath, host.Alias, cfg)
 					if err != nil {
 						fmt.Printf("❌ Error on %s: %v\n", host.Alias, err)
 					}
@@ -310,7 +408,7 @@ func main() {
 		Short: "List all hosts or search using multiple terms (AND logic)",
 		Run: func(cmd *cobra.Command, args []string) {
 			// 1. Convert all arguments to lowercase search terms
-			var searchTerms []string = args // No need to convert here, FindHosts will handle it		
+			var searchTerms []string = args // No need to convert here, FindHosts will handle it
 			matchedHosts := FindHosts(searchTerms, searchableHosts)
 			ListHosts(matchedHosts)
 		},
@@ -326,7 +424,7 @@ func main() {
 			// Prompt to prevent iTerm pane flooding
 			if ConfirmExecution(matchedHosts, "Connect to") {
 				for _, host := range matchedHosts {
-					err := LaunchLayout(host, "single", cfg)
+					err := launchHost(host, "single")
 					if err != nil {
 						fmt.Printf("❌ Failed to launch session for %s: %v\n", host.Alias, err)
 					}
@@ -342,8 +440,10 @@ func main() {
 	rootCmd.AddCommand(addCmd)
 	rootCmd.AddCommand(historyCmd)
 	rootCmd.AddCommand(authCmd)
+	rootCmd.AddCommand(initCmd)
+	rootCmd.AddCommand(lastCmd)
 	rootCmd.AddCommand(macroCmd)
-	rootCmd.AddCommand(connectCmd)	
+	rootCmd.AddCommand(connectCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(err)

@@ -39,12 +39,19 @@ type AgentEnv struct {
 	Key  string `yaml:"key"`
 }
 
+type InitLayout struct {
+	TopDir    string `yaml:"top_dir"`
+	BottomDir string `yaml:"bottom_dir"`
+}
+
 type Settings struct {
 	AgentExpirationHours float64             `yaml:"agent_expiration_hours"`
 	AuthCheckEnv         string              `yaml:"auth_check_env"`
-	IgnoreKeyChanges     *bool               `yaml:"ignore_key_changes"`	
+	IgnoreKeyChanges     *bool               `yaml:"ignore_key_changes"`
 	SSHAgentEnvs         map[string]AgentEnv `yaml:"ssh_agent_envs"`
 	CaptureCommand       string              `yaml:"capture_command"`
+	InitLayout           InitLayout          `yaml:"init_layout"`
+	InternalDomainPrefix string              `yaml:"internal_domain_prefix"`
 }
 
 type Config struct {

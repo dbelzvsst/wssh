@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -14,6 +15,11 @@ const pushHistoryFileName = ".wssh_push_history"
 
 // RunPushInstall handles SCP transfer, remote extraction, and logging
 func RunPushInstall(payloadAlias, hostAlias string, cfg *Config) error {
+	// 0. Validate payload alias contains only safe characters
+	if !regexp.MustCompile(`^[a-zA-Z0-9_-]+$`).MatchString(payloadAlias) {
+		return fmt.Errorf("invalid payload alias '%s': must contain only alphanumeric characters, hyphens, and underscores", payloadAlias)
+	}
+
 	// 1. Look up the payload in the config
 	localFilePath, exists := cfg.Payloads[payloadAlias]
 	if !exists {
@@ -55,7 +61,7 @@ func RunPushInstall(payloadAlias, hostAlias string, cfg *Config) error {
 
 	// 5. Execute SSH to untar (Notice we don't delete the file after extraction) 
 	fmt.Printf("⚙️  Extracting %s on %s (archive will remain on host)...\n", remoteFileName, hostAlias)
-	remoteCmd := fmt.Sprintf("tar -xzf %s -C ~/", remoteFileName)
+	remoteCmd := fmt.Sprintf("tar -xzf %s -C ~/", shellSingleQuote(remoteFileName))
 	
 	sshRunArgs := append(sshArgs, hostAlias, remoteCmd)
 	sshCmd := exec.Command("ssh", sshRunArgs...)

@@ -68,6 +68,39 @@ wssh <host-alias> [layout]
 
 
 Connects directly to the specified host using the chosen layout (e.g., `single`, `2h`, `2v`, `3h`, `3v`, `4g`).
+You can also pass connection flags:
+
+- `--retry` (or `-r`): retry failed SSH connections every 5 seconds until success or `Ctrl+C`
+- `--local`: run SSH in the current terminal instead of opening a new iTerm tab
+
+Examples:
+
+```sh
+wssh my-host --retry
+wssh my-host --local
+wssh my-host --local --retry
+```
+
+* **Reconnect Last Host:**
+```sh
+wssh last [layout]
+wssh --last [layout]
+
+```
+
+
+Both forms reconnect to the last host recorded in `~/.wssh_history`, with an optional layout (for example `wssh last 4g` or `wssh --last 4g`). Configured host options are preserved, and ad-hoc hosts also work. These commands use the default `single` layout when none is given and report an error if there is no history yet. History records connection launches, not verified successful SSH logins.
+
+The same connection flags apply: `wssh --last --local` uses the current terminal, and `wssh last --retry` retries failed connections.
+* **Init Local Workspace:**
+```sh
+wssh init
+
+```
+
+
+Opens a new iTerm tab, splits vertically, then splits the right pane horizontally.
+The right panes `cd` into directories configured in `~/.wssh.yaml` under `settings.init_layout.top_dir` and `settings.init_layout.bottom_dir`.
 * **Auth Check:**
 ```sh
 wssh auth
@@ -92,6 +125,22 @@ Injects a macro (predefined command) into the active iTerm2 session.
 4. Set the Parameter to: `/usr/local/bin/wssh macro <macro-name>`
 
 
+
+### Shell Completion
+
+Configured host aliases, layouts, macros, commands, and flags support tab completion. Enable it in your shell first.
+
+For zsh, add the following to `~/.zshrc`, after any existing `compinit` setup:
+
+```sh
+autoload -Uz compinit
+compinit
+source <(wssh completion zsh)
+```
+
+If your shell already runs `compinit`, only the `source` line is needed. Restart your shell, then type `wssh prod` and press Tab to complete matching configured aliases. Layout completion also works after `wssh last` and `wssh --last`.
+
+For bash (with bash-completion installed), add `source <(wssh completion bash)` to `~/.bashrc`. Fish and PowerShell scripts are available through `wssh completion fish` and `wssh completion powershell`.
 
 ### Example Layouts
 

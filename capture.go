@@ -86,8 +86,8 @@ func ResolveTargetNodes(jbAlias, nodeList string, cfg *Config) ([]string, string
 	parts := strings.SplitN(trueFQDN, ".", 2)
 	if len(parts) == 2 {
 		domainPart := parts[1]
-		if strings.HasPrefix(domainPart, "service.vsr.") {
-			domainPart = strings.TrimPrefix(domainPart, "service.vsr.")
+		if cfg.Settings.InternalDomainPrefix != "" && strings.HasPrefix(domainPart, cfg.Settings.InternalDomainPrefix) {
+			domainPart = strings.TrimPrefix(domainPart, cfg.Settings.InternalDomainPrefix)
 		}
 		domain = "." + domainPart
 	}
@@ -138,9 +138,13 @@ func RunCapture(hosts []string, filter, sockPath string, cfg *Config) error {
 
 	var fifos []string
 	var sshCmds []*exec.Cmd
+	var pipeFiles []*os.File
 
 	// Defer cleanup: Ensure we kill the SSH streams and delete the pipes when Wireshark closes
 	defer func() {
+		for _, f := range pipeFiles {
+			f.Close()
+		}
 		for _, cmd := range sshCmds {
 			if cmd.Process != nil {
 				cmd.Process.Kill()
@@ -174,7 +178,7 @@ func RunCapture(hosts []string, filter, sockPath string, cfg *Config) error {
 
 	// 3. Start the parallel SSH streams
 	for i, host := range hosts {
-		remoteCmd := fmt.Sprintf("sudo tcpdump -U -w - %s", filter)
+		remoteCmd := fmt.Sprintf("sudo tcpdump -U -w - %s", shellSingleQuote(filter))
 		sshArgs := []string{"-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", host, remoteCmd}
 		
 		cmd := exec.Command("ssh", sshArgs...)
@@ -191,6 +195,7 @@ func RunCapture(hosts []string, filter, sockPath string, cfg *Config) error {
 			fmt.Printf("Warning: failed to open pipe for %s: %v\n", host, err)
 			continue
 		}
+		pipeFiles = append(pipeFiles, pipeFile)
 		cmd.Stdout = pipeFile
 		cmd.Stderr = os.Stderr // Keep stderr attached to the terminal so you can see sudo prompts or errors
 

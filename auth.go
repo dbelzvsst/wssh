@@ -12,7 +12,10 @@ import (
 // expandPath converts "~/" or "$HOME" into absolute paths for os.Stat
 func expandPath(path string) string {
 	if strings.HasPrefix(path, "~/") {
-		homeDir, _ := os.UserHomeDir()
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return path
+		}
 		return filepath.Join(homeDir, path[2:])
 	}
 	return os.ExpandEnv(path)
@@ -78,8 +81,17 @@ func CheckAndPrimeAgents(cfg *Config) error {
 	if checkEnv == "" { 
 		checkEnv = "default" 
 	}
-	targetKey := expandPath(cfg.Settings.SSHAgentEnvs[checkEnv].Key)
-	fileInfo, _ := os.Stat(targetKey)
+	
+	env, exists := cfg.Settings.SSHAgentEnvs[checkEnv]
+	if !exists {
+		return fmt.Errorf("ssh_agent_env '%s' not found in ~/.wssh.yaml", checkEnv)
+	}
+	
+	targetKey := expandPath(env.Key)
+	fileInfo, err := os.Stat(targetKey)
+	if err != nil {
+		return fmt.Errorf("could not stat key file %s: %v", targetKey, err)
+	}
 	fmt.Printf("\033[1;32m[VALID]\033[0m Keys are ready (updated %s).\n\n", fileInfo.ModTime().Format(time.Kitchen))
 
 	// Loop through dynamic config to prime agents

@@ -64,14 +64,14 @@ func PrintHistory(limit int) error {
 	}
 
 	fmt.Println("--- Recent Connections ---")
-	
+
 	// Print in reverse order (newest first), up to the limit
 	count := 0
 	for i := len(lines) - 1; i >= 0; i-- {
 		if limit > 0 && count >= limit {
 			break
 		}
-		
+
 		parts := strings.SplitN(lines[i], ",", 2)
 		if len(parts) == 2 {
 			t, _ := time.Parse(time.RFC3339, parts[0])
@@ -121,3 +121,44 @@ func GetRecentHosts() []string {
 	return recent
 }
 
+// GetLastHost returns the most recently connected host alias.
+func GetLastHost() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	historyPath := filepath.Join(homeDir, historyFileName)
+
+	file, err := os.Open(historyPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("no connection history found yet")
+		}
+		return "", err
+	}
+	defer file.Close()
+
+	var lastLine string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line != "" {
+			lastLine = line
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return "", err
+	}
+
+	if lastLine == "" {
+		return "", fmt.Errorf("history is empty")
+	}
+
+	parts := strings.SplitN(lastLine, ",", 2)
+	if len(parts) != 2 || strings.TrimSpace(parts[1]) == "" {
+		return "", fmt.Errorf("invalid history entry: %s", lastLine)
+	}
+
+	return strings.TrimSpace(parts[1]), nil
+}
